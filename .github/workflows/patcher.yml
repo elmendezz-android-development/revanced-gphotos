@@ -1,48 +1,64 @@
-name: ReVanced GPhotos Patcher
+name: Build GPhotos RVX (Non-Root)
 
 on:
-  workflow_dispatch: # Permite ejecutarlo manualmente
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions: write-all
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'zulu'
+          distribution: "zulu"
+          java-version: "17"
 
-      - name: Download ReVanced Tools
+      - name: Install Dependencies
         run: |
-          # Aquí deberías obtener las últimas versiones de CLI, Patches e Integrations
-          # Por brevedad, usaremos variables de ejemplo
-          wget https://github.com/revanced/revanced-cli/releases/latest/download/revanced-cli.jar -O revanced-cli.jar
-          wget https://github.com/revanced/revanced-patches/releases/latest/download/revanced-patches.jar -O patches.jar
-          wget https://github.com/revanced/revanced-integrations/releases/latest/download/revanced-integrations.apk -O integrations.apk
+          sudo apt-get update
+          sudo apt-get install -y wget curl jq
 
-      - name: Download Google Photos APK
+      - name: Download Tools (RVX by inotia00)
         run: |
-          # Nota: Necesitas el APK base de Google Photos. 
-          # Puedes usar herramientas como 'gdown' o 'curl' desde un mirror confiable.
-          echo "Descargando APK original..."
-          # curl -L "URL_DEL_APK" -o gphotos-base.apk
-
-      - name: Patch APK
-        run: |
-          java -jar revanced-cli.jar patch \
-            --patches patches.jar \
-            --merge integrations.apk \
-            --pkg app.revanced.gphotos \
-            --out gphotos-revanced.apk \
-            gphotos-base.apk
-
-      - name: Upload Result
-        uses: actions/upload-artifact@v4
-        with:
-          name: GPhotos-ReVanced
-          path: gphotos-revanced.apk
+          # Descarga dinámica de la última versión de CLI, Patches e Integrations
+          get_latest() { curl -s "https://api.github.com/repos/$1/releases/latest" | jq -r ".assets[] | select(.name | test(\"$2\")) | .browser_download_url"; }
           
+          wget -O cli.jar $(get_latest "inotia00/revanced-cli" "all.jar")
+          wget -O patches.jar $(get_latest "inotia00/revanced-patches" "jar")
+          wget -O integrations.apk $(get_latest "inotia00/revanced-integrations" "apk")
+
+      - name: Fetch & Patch Google Photos
+        run: |
+          # 1. Aquí usamos un script simple o wget para el APK base. 
+          # Nota: Google Photos suele requerir una versión específica.
+          # Por ahora, asumimos que tienes el 'gphotos-base.apk' o lo descargas aquí:
+          # (Si no tienes uno, puedes usar el comando 'revanced-cli' para listar versiones soportadas)
+          
+          java -jar cli.jar patch \
+            -p patches.jar \
+            -m integrations.apk \
+            -b gphotos-base.apk \
+            --pkg app.revanced.gphotos \
+            -o gphotos-rvx-signed.apk \
+            -i "GmsCore support" \
+            -i "Premium features" \
+            --single-apk
+
+      - name: Sign APK (Test Key)
+        # Como no tienes PC ni firma, usamos Uber APK Signer para firmar con llave de test
+        run: |
+          wget https://github.com/patrickfav/uber-apk-signer/releases/download/v1.3.0/uber-apk-signer-1.3.0.jar
+          java -jar uber-apk-signer-1.3.0.jar --apks gphotos-rvx-signed.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Google Photos RVX v${{ github.run_number }}
+          files: ./*-aligned-debugSigned.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
